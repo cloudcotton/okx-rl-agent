@@ -5,8 +5,8 @@ Three-stage process:
   1. Reindex  — force a perfectly regular 5-min DatetimeIndex (no gaps, no skips).
   2. Impute   — forward-fill prices for exchange downtime gaps; zero-fill volumes.
   3. Despike  — detect and neutralise physically impossible price spikes using a
-                rolling-window Z-score filter (no future leakage for OHLCV; we use
-                centered windows here because this is an offline, batch operation).
+                rolling-window Z-score filter with a trailing window (center=False)
+                to prevent future data leakage into model training.
 """
 
 import logging
@@ -100,13 +100,15 @@ class DataCleaner:
         standard deviations from its rolling mean, then replace them with
         forward-filled values.
 
-        Uses a centred rolling window because this is offline batch processing —
-        we have the full history available and can afford to look both ways.
-        For a live pipeline this should be changed to a trailing window.
+        Uses a trailing rolling window (center=False) so that the Z-score at
+        time t is computed solely from [t-SPIKE_WINDOW+1 … t].  A centred window
+        would incorporate future bars (t+1 … t+SPIKE_WINDOW/2), introducing
+        look-ahead bias that inflates backtest performance and destroys live
+        trading ability.
         """
         for col in PRICE_COLS:
-            roll_mean = df[col].rolling(SPIKE_WINDOW, min_periods=10, center=True).mean()
-            roll_std  = df[col].rolling(SPIKE_WINDOW, min_periods=10, center=True).std()
+            roll_mean = df[col].rolling(SPIKE_WINDOW, min_periods=10).mean()
+            roll_std  = df[col].rolling(SPIKE_WINDOW, min_periods=10).std()
 
             # Avoid division by zero if std collapses to 0 in a flat region
             safe_std = roll_std.replace(0.0, np.nan)

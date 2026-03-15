@@ -71,8 +71,14 @@ class StorageManager:
     def save_sqlite(self, df: pd.DataFrame, symbol: str) -> None:
         """
         Upsert strategy: delete all existing rows for the symbol, then
-        bulk-insert the full clean dataset. This avoids PRIMARY KEY conflicts
-        on re-runs and keeps the implementation simple.
+        bulk-insert the full clean dataset.  DELETE and every INSERT chunk
+        run inside a single explicit transaction so a mid-write crash leaves
+        the database untouched (the DELETE is rolled back along with any
+        partial inserts).
+
+        isolation_level=None puts sqlite3 in autocommit mode so we can issue
+        BEGIN/COMMIT/ROLLBACK ourselves without fighting the implicit-
+        transaction machinery that sqlite3 normally layers on top of DML.
         """
         rows = df.copy()
         rows["symbol"]   = symbol
@@ -80,8 +86,9 @@ class StorageManager:
 
         cols = ["datetime", "symbol", "open", "high", "low", "close", "vol", "vol_quote"]
 
-        with sqlite3.connect(DB_PATH) as conn:
-            # Remove stale rows for this symbol before re-inserting
+        conn = sqlite3.connect(DB_PATH, isolation_level=None)
+        try:
+            conn.execute("BEGIN")
             conn.execute("DELETE FROM ohlcv WHERE symbol = ?", (symbol,))
             rows[cols].to_sql(
                 "ohlcv",
@@ -91,6 +98,12 @@ class StorageManager:
                 method="multi",
                 chunksize=5_000,
             )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
         log.info(f"[{symbol}] SQLite: {len(rows):,} rows written to {DB_PATH}")
 
