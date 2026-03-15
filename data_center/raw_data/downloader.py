@@ -2,7 +2,7 @@
 OKX historical candle downloader.
 
 Design:
-  - Reverse-time cursor traversal using the `before` parameter (ts < before).
+  - Reverse-time cursor traversal using the `after` parameter (ts < after).
   - 1-candle overlap on every page boundary to guard against edge gaps;
     deduplication is done after concat.
   - Checkpoint file records the cursor after each page so a crash can resume
@@ -61,8 +61,8 @@ class OKXDownloader:
 
     Pagination strategy (backwards in time):
         cursor starts at  END_TS + 1 bar
-        each page:  before=cursor  →  OKX returns rows where ts < cursor
-        next cursor = oldest ts in the page  (exclusive, so no duplicate)
+        each page:  after=cursor  →  OKX returns rows where ts < cursor
+        next cursor = oldest ts in the page + 1 ms  (1-candle overlap; deduped later)
         stop when oldest ts <= START_TS  or  OKX returns an empty page
     """
 
@@ -93,11 +93,11 @@ class OKXDownloader:
 
     # ── single-page fetch with retry / backoff ────────────────────────────────
 
-    def _fetch_page(self, before_ms: int, endpoint: str = HISTORY_ENDPOINT) -> list:
+    def _fetch_page(self, after_ms: int, endpoint: str = HISTORY_ENDPOINT) -> list:
         params = {
             "instId": self.symbol,
             "bar":    BAR,
-            "before": str(before_ms),
+            "after":  str(after_ms),
             "limit":  str(LIMIT),
         }
         for attempt in range(1, MAX_RETRIES + 1):
@@ -134,7 +134,7 @@ class OKXDownloader:
                 time.sleep(wait)
 
         raise RuntimeError(
-            f"[{self.symbol}] All {MAX_RETRIES} retries exhausted (before={before_ms})"
+            f"[{self.symbol}] All {MAX_RETRIES} retries exhausted (after={after_ms})"
         )
 
     # ── full sweep ────────────────────────────────────────────────────────────
@@ -194,8 +194,8 @@ class OKXDownloader:
             )
 
             # Advance cursor backwards in time.
-            # `before` is exclusive, so next page will return ts < oldest — no overlap.
-            # We add 1 ms so we re-request the oldest candle itself as a safety overlap;
+            # `after` is exclusive (returns ts < cursor), so oldest is already included.
+            # We add 1 ms to re-request the oldest candle as a safety overlap;
             # duplicates are removed during the final concat.
             cursor = oldest + 1
             self._save_cursor(cursor)
