@@ -86,17 +86,17 @@ class StorageManager:
 
         cols = ["datetime", "symbol", "open", "high", "low", "close", "vol", "vol_quote"]
 
+        records = rows[cols].values.tolist()
+
         conn = sqlite3.connect(DB_PATH, isolation_level=None)
         try:
             conn.execute("BEGIN")
             conn.execute("DELETE FROM ohlcv WHERE symbol = ?", (symbol,))
-            rows[cols].to_sql(
-                "ohlcv",
-                conn,
-                if_exists="append",
-                index=False,
-                method="multi",
-                chunksize=5_000,
+            conn.executemany(
+                "INSERT INTO ohlcv "
+                "(datetime, symbol, open, high, low, close, vol, vol_quote) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                records,
             )
             conn.execute("COMMIT")
         except Exception:
