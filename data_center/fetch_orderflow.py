@@ -119,7 +119,7 @@ def fetch_open_interest(inst_id: str, min_ts: int, max_ts: int, period: str = "5
     if not all_data:
         return pd.DataFrame()
 
-    df = pd.DataFrame(all_data, columns=["ts", "oi", "oiCcy"])
+    df = pd.DataFrame(all_data, columns=["ts", "oi", "oiCcy", "oiUsd"])
     df["datetime"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
     df["oi"] = df["oi"].astype(float)
     
