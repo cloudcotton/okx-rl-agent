@@ -192,15 +192,16 @@ class TestFrictionCosts:
         env.step(0)  # go short
         assert env._entry_price < exec_open
 
-    def test_holding_penalty_applied(self):
-        """While holding a position, every step subtracts the holding penalty."""
+    def test_no_holding_penalty_for_flat_trade(self):
+        """V2: Holding a slightly losing/flat position no longer incurs a penalty."""
         env = self._env_with_flat_price()
         env.reset(seed=0)
 
         env.step(2)          # go long
         _, r1, _, _, _ = env.step(2)   # hold long (action stays long = no trade)
-        # r_base ≈ 0 (flat price), r_hold should be negative
-        assert r1 < 0.0, f"holding penalty not applied: reward={r1}"
+        # r_base ≈ 0 (flat price), old holding penalty is removed.
+        # Total reward should be practically zero (just 1e-8 floating point noise)
+        assert abs(r1) < 1e-5, f"Expected ~0 reward in flat holding, got {r1}"
 
     def test_adhd_penalty_on_change(self):
         """Any position change incurs the ADHD penalty."""
