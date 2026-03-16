@@ -73,7 +73,8 @@ def load_dataset(
     """
     feat_dir = Path(feat_dir) if feat_dir else _DEFAULT_FEAT_DIR
 
-    fname = symbol.replace("-", "_") + "_5m_features.parquet"
+    #fname = symbol.replace("-", "_") + "_5m_features.parquet"
+    fname = "ETH_USDT_5m_macro_features.parquet"
     path  = feat_dir / fname
     if not path.exists():
         raise FileNotFoundError(
