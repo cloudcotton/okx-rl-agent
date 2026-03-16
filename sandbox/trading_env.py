@@ -19,12 +19,14 @@ Action space (Discrete 3)
     2 → target position = +1  (long)
 
 Reward components
-    R = R_base + R_hold + R_adhd [+ R_drawdown if triggered]
-    R_base   = ln(marked_nw_t / marked_nw_{t-1})
-    R_hold   = HOLDING_PENALTY  (-0.0001) each step while in position
-    R_adhd   = ADHD_PENALTY     (-0.0002) on any position change
-               REVERSAL_PENALTY (-0.0002) extra for direct flip (long ↔ short)
-    R_draw   = DRAWDOWN_PENALTY (-1.0) once, then episode terminates
+    R = R_base + R_hold + R_adhd + R_stoploss [+ R_drawdown if triggered]
+    R_base     = ln(marked_nw_t / marked_nw_{t-1})
+    R_hold     = +0.0001 each step while position is profitable (float pnl > 0)
+                  0.0    otherwise (holding fear removed)
+    R_adhd     = ADHD_PENALTY     (-0.002)  on any position change
+                 REVERSAL_PENALTY (-0.0002) extra for direct flip (long ↔ short)
+    R_stoploss = -0.05 each step that unrealised loss exceeds 1%
+    R_draw     = DRAWDOWN_PENALTY (-1.0) once, then episode terminates
 
 Episode lifecycle
     reset()  → random start index, leaving room for MAX_STEPS + 1 bars ahead
@@ -51,8 +53,8 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _COMMISSION_RATE  = 0.0005    # 0.05 %  one-way Taker fee
 _SLIPPAGE_RATE    = 0.00025   # 0.025 % of execution open price
-_HOLDING_PENALTY  = -0.0001   # per step while position != 0
-_ADHD_PENALTY     = -0.0002   # any position change
+_HOLDING_PENALTY  =  0.0      # 0 = no fear of holding; profit-holding gets +0.0001 bonus below
+_ADHD_PENALTY     = -0.002    # any position change (×10 vs original to curb overtrading)
 _REVERSAL_PENALTY = -0.0002   # extra for direct long ↔ short flip
 _DRAWDOWN_LIMIT   = 0.10      # 10 % peak-to-trough → circuit-breaker
 _DRAWDOWN_PENALTY = -1.0      # one-time terminal penalty
@@ -201,7 +203,23 @@ class TradingEnv(gym.Env):
 
         # ── 5. Compute reward ─────────────────────────────────────────────────
         r_base = _safe_log_return(curr_marked, prev_marked)
-        r_hold = self.holding_penalty if self._position != 0.0 else 0.0
+
+        # Holding reward: +0.0001 bonus when sitting on a profitable position,
+        # 0 otherwise — eliminates the old "fear of holding" penalty.
+        r_hold = 0.0
+        if self._position != 0.0 and self._entry_price > 0.0:
+            if self._position > 0.0:
+                raw_pnl = curr_close / self._entry_price - 1.0
+            else:
+                raw_pnl = 1.0 - curr_close / self._entry_price
+
+            if raw_pnl > 0.0:
+                r_hold = 0.0001          # sugar for staying in a winner
+            elif raw_pnl < -0.01:
+                reward_shaping -= 0.05   # electric shock: unrealised loss > 1%
+        else:
+            raw_pnl = 0.0
+
         reward = r_base + r_hold + reward_shaping
 
         # ── 6. Termination checks ─────────────────────────────────────────────
