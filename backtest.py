@@ -36,7 +36,7 @@ def main(args):
 
     # ── 2. 加载数据并严格切分出验证集 ─────────────────────────────────
     log.info(f"正在加载 {args.symbol} 数据...")
-    df_full = load_dataset([args.symbol])
+    df_full = load_dataset(args.symbol)
     _, eval_df = split_train_eval(df_full, TRAIN_RATIO)
     
     # 提取时间戳和收盘价用于日志打印
