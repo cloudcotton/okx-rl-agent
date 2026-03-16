@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATA_DIR = Path(__file__).resolve().parent / "data_center"
+DATA_DIR = Path(__file__).resolve().parent.parent
 FEAT_DIR = DATA_DIR / "features"
 THRESHOLD = 0.85  # 共线性剔除阈值
 
