@@ -52,4 +52,4 @@ def generate_macro_features(input_path: str):
 
 if __name__ == "__main__":
     # 替换为你实际的 5 分钟特征文件路径
-    generate_macro_features("data_center/ETH_USDT_5m_features.parquet")
+    generate_macro_features("data_center/features/ETH_USDT_5m_features.parquet")
