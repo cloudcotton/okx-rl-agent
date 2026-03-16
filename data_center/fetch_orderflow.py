@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 import requests
 import pandas as pd
+import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
