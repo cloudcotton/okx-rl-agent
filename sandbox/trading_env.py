@@ -93,6 +93,7 @@ class TradingEnv(gym.Env):
         self._open_arr  = df["open"].to_numpy(dtype=np.float64, copy=True)         # (N,)
         self._close_arr = df["close"].to_numpy(dtype=np.float64, copy=True)        # (N,)
         self._n_rows    = len(df)
+        self._n_features = self._feat_arr.shape[1]  # <--- 新增：动态获取特征数量
 
         # Hyper-parameters
         self.max_steps        = max_steps
@@ -107,7 +108,7 @@ class TradingEnv(gym.Env):
 
         # Gymnasium spaces
         self.observation_space = spaces.Box(
-            low=-10.0, high=10.0, shape=(16,), dtype=np.float32
+            low=-10.0, high=10.0, shape=(self._n_features + 2,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(3)
 
@@ -333,26 +334,29 @@ class TradingEnv(gym.Env):
         return self._net_worth * (1.0 + pnl_ratio)
 
     def _get_obs(self) -> np.ndarray:
-        """Build the 16-dim observation vector for the current step."""
-        obs = np.empty(16, dtype=np.float32)
-        obs[:14] = self._feat_arr[self._step_idx]
-        obs[14]  = np.float32(self._position)
+        """Build the dynamic observation vector for the current step."""
+        # 动态创建长度为 (特征数 + 2) 的空数组
+        obs = np.empty(self._n_features + 2, dtype=np.float32)
+        
+        # 填充 K 线特征
+        obs[:self._n_features] = self._feat_arr[self._step_idx]
+        
+        # 填充仓位状态 (倒数第2个位置)
+        obs[self._n_features]  = np.float32(self._position)
 
-        # Unrealised PnL: scaled to ±10 (1 unit ≈ 10% move).
-        # Using ×10 instead of ×100 so the ±10 clip covers ±100% moves,
-        # preserving the AI's ability to sense extreme profits in crypto.
+        # 填充浮盈亏状态 (倒数第1个位置)
         if self._position != 0.0 and self._entry_price > 0.0:
             curr_close = self._close_arr[self._step_idx]
             if self._position > 0.0:
                 raw_pnl = curr_close / self._entry_price - 1.0
             else:
                 raw_pnl = 1.0 - curr_close / self._entry_price
-            obs[15] = np.float32(np.clip(raw_pnl * 10.0, -10.0, 10.0))
+            obs[self._n_features + 1] = np.float32(np.clip(raw_pnl * 10.0, -10.0, 10.0))
         else:
-            obs[15] = np.float32(0.0)
+            obs[self._n_features + 1] = np.float32(0.0)
 
         return obs
-
+    
     def _get_info(self, marked_nw: Optional[float] = None) -> Dict[str, Any]:
         if marked_nw is None:
             marked_nw = self._mark_to_market(self._close_arr[self._step_idx])
