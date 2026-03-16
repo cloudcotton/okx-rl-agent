@@ -18,13 +18,12 @@ BASE_URL = "https://www.okx.com"
 INST_ID = "ETH-USDT-SWAP"
 
 def fetch_funding_rate(inst_id: str, min_ts: int, max_ts: int, limit: int = 100) -> pd.DataFrame:
-    """抓取资金费率历史，严格限制在 [min_ts, max_ts] 毫秒级时间戳范围内"""
+    """抓取资金费率历史，严格限制在 [min_ts, max_ts] 范围内"""
     url = f"{BASE_URL}/api/v5/public/funding-rate-history"
     all_data = []
     
-    # OKX API 的 after 代表“早于这个时间戳的数据”
-    # 我们加上 1000 毫秒的容错，确保能抓到 max_ts 那个点的数据
     after = str(max_ts + 1000) 
+    last_oldest_ts = None  # 用于防死循环
     
     log.info(f"开始抓取 {inst_id} 资金费率...")
     log.info(f"目标区间: {pd.to_datetime(min_ts, unit='ms')} -> {pd.to_datetime(max_ts, unit='ms')}")
@@ -39,12 +38,17 @@ def fetch_funding_rate(inst_id: str, min_ts: int, max_ts: int, limit: int = 100)
             batch = res["data"]
             all_data.extend(batch)
             
-            # 获取这一批数据中最老的一个时间戳，作为下一页的游标
             oldest_ts = int(batch[-1]["fundingTime"])
-            after = batch[-1]["fundingTime"]
-            time.sleep(0.1)  # 遵守 API 限频
             
-            # 【核心边界控制】：如果最老的数据已经早于我们的最小时间，立刻停止抓取！
+            # 【防死循环断路器】：如果时间不再推进，说明已经到底了
+            if oldest_ts == last_oldest_ts:
+                log.warning("资金费率数据不再更新，已达到 API 历史极限！")
+                break
+            last_oldest_ts = oldest_ts
+            
+            after = str(oldest_ts)
+            time.sleep(0.1)
+            
             if oldest_ts <= min_ts:
                 break
                 
@@ -62,7 +66,6 @@ def fetch_funding_rate(inst_id: str, min_ts: int, max_ts: int, limit: int = 100)
     df["datetime"] = pd.to_datetime(df["fundingTime"].astype(int), unit="ms")
     df["fundingRate"] = df["fundingRate"].astype(float)
     
-    # 过滤掉多抓的冗余数据，并按时间正序排列
     df = df[(df["datetime"] >= pd.to_datetime(min_ts, unit="ms")) & 
             (df["datetime"] <= pd.to_datetime(max_ts, unit="ms"))]
     df = df.sort_values("datetime").reset_index(drop=True)
@@ -70,17 +73,18 @@ def fetch_funding_rate(inst_id: str, min_ts: int, max_ts: int, limit: int = 100)
 
 
 def fetch_open_interest(inst_id: str, min_ts: int, max_ts: int, period: str = "5m") -> pd.DataFrame:
-    """抓取合约持仓量历史，严格限制在 [min_ts, max_ts] 毫秒级时间戳范围内"""
+    """抓取合约持仓量历史，使用 end 参数分页"""
     url = f"{BASE_URL}/api/v5/rubik/stat/contracts/open-interest-history"
     all_data = []
     
-    after = str(max_ts + 1000)
+    # OKX Rubik 接口必须使用 end 才能请求更早的数据
+    end_ts = max_ts + 1000
+    last_oldest_ts = None  # 用于防死循环
     
     log.info(f"开始抓取 {inst_id} {period} 级别持仓量...")
     
     while True:
-        # Rubik 接口支持 begin 和 end 参数，但为了兼容性，用 after 分页最稳妥
-        params = {"instId": inst_id, "period": period, "after": after}
+        params = {"instId": inst_id, "period": period, "end": str(end_ts)}
         try:
             res = requests.get(url, params=params, timeout=10).json()
             if res.get("code") != "0" or not res.get("data"):
@@ -91,10 +95,17 @@ def fetch_open_interest(inst_id: str, min_ts: int, max_ts: int, period: str = "5
             
             # OKX 返回格式: [ts, oi, oiCcy]
             oldest_ts = int(batch[-1][0])
-            after = batch[-1][0]
-            time.sleep(0.2)  # Rubik 接口限频较严
             
-            # 【核心边界控制】
+            # 【防死循环断路器】
+            if oldest_ts == last_oldest_ts:
+                log.warning("持仓量数据时间不再推进，已达到交易所免费数据的历史极限！")
+                break
+            last_oldest_ts = oldest_ts
+            
+            # 将下一次请求的 end 设为当前这批数据最老时间的前 1 毫秒
+            end_ts = oldest_ts - 1
+            time.sleep(0.2) 
+            
             if oldest_ts <= min_ts:
                 break
                 
@@ -112,12 +123,10 @@ def fetch_open_interest(inst_id: str, min_ts: int, max_ts: int, period: str = "5
     df["datetime"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
     df["oi"] = df["oi"].astype(float)
     
-    # 严格过滤并排序
     df = df[(df["datetime"] >= pd.to_datetime(min_ts, unit="ms")) & 
             (df["datetime"] <= pd.to_datetime(max_ts, unit="ms"))]
     df = df.sort_values("datetime").reset_index(drop=True)
     return df[["datetime", "oi"]]
-
 
 def merge_orderflow_features(ohlcv_path: Path):
     """主函数：读取本地 K 线 -> 提取时间边界 -> 抓取 -> 对齐融合"""
