@@ -87,9 +87,9 @@ class TradingEnv(gym.Env):
         self._validate_df(df)
 
         # Store data as numpy arrays for fast indexing (avoid pandas overhead in step)
-        self._feat_arr  = df[FEATURE_COLS].to_numpy(dtype=np.float32)   # (N, 14)
-        self._open_arr  = df["open"].to_numpy(dtype=np.float64)         # (N,)
-        self._close_arr = df["close"].to_numpy(dtype=np.float64)        # (N,)
+        self._feat_arr  = df[FEATURE_COLS].to_numpy(dtype=np.float32, copy=True)   # (N, 14)
+        self._open_arr  = df["open"].to_numpy(dtype=np.float64, copy=True)         # (N,)
+        self._close_arr = df["close"].to_numpy(dtype=np.float64, copy=True)        # (N,)
         self._n_rows    = len(df)
 
         # Hyper-parameters
