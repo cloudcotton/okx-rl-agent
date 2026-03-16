@@ -38,8 +38,10 @@ FEATURE_COLS = [
     "f_macd_hist_z",
     "f_rvol",
     "f_vwpc_z",
+    "f_macro_1h_bias",
+    "f_macro_4h_position",
+    "f_momentum_sync",
 ]
-
 OHLCV_COLS = ["datetime", "open", "high", "low", "close", "vol"]
 
 # Default path relative to this file's location (sandbox/ → data_center/features/)
