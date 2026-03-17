@@ -51,8 +51,8 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants (all overridable via __init__ kwargs)
 # ---------------------------------------------------------------------------
-_COMMISSION_RATE  = 0.0    # 0.05 %  one-way Taker fee
-_SLIPPAGE_RATE    = 0.0   # 0.025 % of execution open price
+_COMMISSION_RATE  = 0.0005    # 0.05 %  one-way Taker fee
+_SLIPPAGE_RATE    = 0.00025   # 0.025 % of execution open price
 _HOLDING_PENALTY  =  0.0      # 0 = no fear of holding; profit-holding gets +0.0001 bonus below
 _ADHD_PENALTY     = -0.002    # any position change (×10 vs original to curb overtrading)
 _REVERSAL_PENALTY = -0.0002   # extra for direct long ↔ short flip
