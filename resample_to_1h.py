@@ -19,23 +19,30 @@ def resample_data(input_path: str, output_path: str):
     
     log.info("开始重采样至 1 小时 (1H) 级别...")
     
+    # 自动探测成交量列名叫什么
+    vol_col = 'volume'
+    if 'vol' in df_5m.columns:
+        vol_col = 'vol'
+    elif 'Volume' in df_5m.columns:
+        vol_col = 'Volume'
+
     # 定义 OHLCV 的聚合规则
     agg_dict = {
         'open': 'first',
         'high': 'max',
         'low': 'min',
         'close': 'last',
-        'volume': 'sum'
+        vol_col: 'sum'
     }
     
     # 执行重采样
     df_1h = df_5m.resample('1h').agg(agg_dict).dropna()
     
     # 重新生成最基础的特征 (你可以在这里补回 RSI, MACD 等)
-    log.info("正在重新计算 1 小时级别的基础特征...")
-    df_1h['ret_1'] = df_1h['close'].pct_change(1)
-    df_1h['volatility'] = df_1h['ret_1'].rolling(24).std() # 过去24小时波动率
-    df_1h['ma_20_bias'] = (df_1h['close'] / df_1h['close'].rolling(20).mean()) - 1.0
+    # log.info("正在重新计算 1 小时级别的基础特征...")
+    # df_1h['ret_1'] = df_1h['close'].pct_change(1)
+    # df_1h['volatility'] = df_1h['ret_1'].rolling(24).std() # 过去24小时波动率
+    # df_1h['ma_20_bias'] = (df_1h['close'] / df_1h['close'].rolling(20).mean()) - 1.0
     
     # 清理 NaN 并恢复 datetime 列
     df_1h = df_1h.dropna().reset_index()
