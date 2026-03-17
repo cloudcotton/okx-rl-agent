@@ -62,11 +62,16 @@ def main(args):
 
     # ── 4. 加载 AI 大脑 ───────────────────────────────────────────────
     log.info(f"正在唤醒 AI 模型: {model_path.name}")
-    model = PPO.load(model_path, env=env)
+    model = RecurrentPPO.load(model_path, env=env)
 
     # ── 5. 开始逐 K 线回测 ────────────────────────────────────────────
     obs = env.reset()
     done = False
+
+    # 【新增】：LSTM 记忆传递的初始状态
+    lstm_states = None
+    # 告诉 LSTM 这是第一步，需要初始化记忆
+    episode_starts = np.ones((env.num_envs,), dtype=bool)
     
     # 记录状态，用于捕捉交易动作
     last_position = 0.0
@@ -79,7 +84,7 @@ def main(args):
 
     while not done:
         # deterministic=True 极其重要！关掉随机探索，让模型输出最有把握的动作
-        action, _states = model.predict(obs, deterministic=True)
+        action, lstm_states = model.predict(obs, state=lstm_states, episode_start=episode_starts, deterministic=True)
         obs, rewards, dones, infos = env.step(action)
         
         # SB3 的 VecEnv 返回的都是数组，提取第0个环境的信息
@@ -114,6 +119,8 @@ def main(args):
             last_position = current_position
             
         done = dones[0]
+        # 【新增】：更新 episode_starts，传给下一步
+        episode_starts = dones
 
     # ── 6. 打印期末成绩单 ─────────────────────────────────────────────
     final_info = infos[0]
