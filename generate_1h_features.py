@@ -62,7 +62,14 @@ def generate_1h_features(input_path: str, output_path: str):
     df['f_bb_pos'] = (df['close'] - rolling_mean) / (rolling_std * 2 + 1e-8)
     
     # 相对成交量 (RVOL): 突破时是否放量
-    df['f_rvol_24'] = df['volume'] / (df['volume'].rolling(24).mean() + 1e-8)
+    # 先自动探测真正的成交量列名叫什么
+    vol_col = 'volume'
+    if 'vol' in df.columns:
+        vol_col = 'vol'
+    elif 'Volume' in df.columns:
+        vol_col = 'Volume'
+        
+    df['f_rvol_24'] = df[vol_col] / (df[vol_col].rolling(24).mean() + 1e-8)
 
     # ── 5. 数据清洗 ──
     # 砍掉开头因为计算均线和移动窗口产生的 NaN 废数据 (大约需要丢弃前 60 行)
