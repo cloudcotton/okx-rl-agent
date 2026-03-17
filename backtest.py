@@ -14,7 +14,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from stable_baselines3 import PPO
+#from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from sandbox.data_loader import load_dataset

@@ -36,7 +36,10 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
-from stable_baselines3 import PPO
+# 原来为MLP，现在改为LSTM，暂时注释掉
+#from stable_baselines3 import PPO
+# 下面为LSTM版本
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.callbacks import (
     BaseCallback,
     CallbackList,
@@ -302,11 +305,12 @@ def main(args: argparse.Namespace) -> None:
         training=False,     # eval env never updates running stats
     )
 
-    # ── 4. PPO model ─────────────────────────────────────────────────────
+    # ── 4. RecurrentPPO (LSTM) model ─────────────────────────────────────
     if args.resume:
         resume_path = Path(args.resume)
         log.info(f"Resuming from {resume_path} …")
-        model = PPO.load(
+        # 【修改点 1】: 将 PPO.load 换成 RecurrentPPO.load
+        model = RecurrentPPO.load(
             resume_path,
             env=train_vec,
             tensorboard_log=str(run_dir / "tb"),
@@ -319,12 +323,24 @@ def main(args: argparse.Namespace) -> None:
             eval_vec.training = False
             log.info(f"VecNormalize stats loaded from {vecnorm_path}")
     else:
-        model = PPO(
+        # 【修改点 2】: 专门为 LSTM 定义网络架构参数
+        # 提取特征用两层 64 的全连接，LSTM 记忆体容量设为 64，1 层结构防止过拟合
+        lstm_policy_kwargs = dict(
+            net_arch=[64, 64],
+            lstm_hidden_size=64,
+            n_lstm_layers=1,
+        )
+
+        # 【修改点 3】: 将 PPO 换成 RecurrentPPO，并指定 "MlpLstmPolicy"
+        model = RecurrentPPO(
+            "MlpLstmPolicy", 
             env=train_vec,
             learning_rate=linear_schedule(args.lr),
             tensorboard_log=str(run_dir / "tb"),
             seed=args.seed,
-            **{k: v for k, v in PPO_KWARGS.items() if k != "verbose"},
+            policy_kwargs=lstm_policy_kwargs,  # 注入 LSTM 配置
+            # 解包你原有的 PPO_KWARGS，但排除掉冲突的参数
+            **{k: v for k, v in PPO_KWARGS.items() if k not in ["verbose", "policy_kwargs"]},
             verbose=1,
         )
 
@@ -338,14 +354,14 @@ def main(args: argparse.Namespace) -> None:
 
     # ── 6. Train ─────────────────────────────────────────────────────────
     log.info(
-        f"Training PPO | symbol={args.symbol} | n_envs={args.n_envs} | "
+        f"Training LSTM | symbol={args.symbol} | n_envs={args.n_envs} | "
         f"total_steps={args.total_steps:,} | run_dir={run_dir}"
     )
     model.learn(
         total_timesteps=args.total_steps,
         callback=callbacks,
         reset_num_timesteps=not args.resume,
-        tb_log_name="ppo",
+        tb_log_name="lstm",
         progress_bar=True,
     )
 
