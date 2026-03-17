@@ -340,7 +340,7 @@ def main(args: argparse.Namespace) -> None:
             seed=args.seed,
             policy_kwargs=lstm_policy_kwargs,  # 注入 LSTM 配置
             # 解包你原有的 PPO_KWARGS，但排除掉冲突的参数
-            **{k: v for k, v in PPO_KWARGS.items() if k not in ["verbose", "policy_kwargs"]},
+            **{k: v for k, v in PPO_KWARGS.items() if k not in ["policy", "verbose", "policy_kwargs"]},
             verbose=1,
         )
 
