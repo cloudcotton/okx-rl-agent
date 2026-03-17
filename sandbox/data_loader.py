@@ -22,25 +22,11 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-# 14 features selected after collinearity analysis
+# 完全替换原来的 FEATURE_COLS
 FEATURE_COLS = [
-    "f_sin_hour",
-    "f_cos_hour",
-    "f_dir_body_ratio",
-    "f_overlap_ratio",
-    "f_upper_shadow",
-    "f_lower_shadow",
-    "f_log_ret_3",
-    "f_log_ret_12",
-    "f_dist_to_high_24",
-    "f_atr_norm",
-    "f_rsi_norm",
-    "f_macd_hist_z",
-    "f_rvol",
-    "f_vwpc_z",
-    "f_macro_1h_bias",
-    "f_macro_4h_position",
-    "f_momentum_sync",
+    "f_ret_1", "f_ret_4", "f_rsi_14", "f_macd_hist_norm",
+    "f_ema_20_bias", "f_ema_60_bias", "f_volatility_24",
+    "f_bb_pos", "f_rvol_24"
 ]
 OHLCV_COLS = ["datetime", "open", "high", "low", "close", "vol"]
 
@@ -74,7 +60,7 @@ def load_dataset(
     feat_dir = Path(feat_dir) if feat_dir else _DEFAULT_FEAT_DIR
 
     #fname = symbol.replace("-", "_") + "_5m_features.parquet"
-    fname = "ETH_USDT_5m_macro_features.parquet"
+    fname = "ETH_USDT_1h_features.parquet"
     path  = feat_dir / fname
     if not path.exists():
         raise FileNotFoundError(
