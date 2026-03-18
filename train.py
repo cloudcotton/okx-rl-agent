@@ -58,7 +58,18 @@ from sandbox.data_loader import load_dataset
 from sandbox.trading_env import TradingEnv
 
 import torch
-torch.set_num_threads(1)  # 强行给 PyTorch 戴上痛苦面具，禁止它抢占多核 CPU！
+torch.set_num_threads(1)  # 每个 subprocess worker 限 1 线程，防止 CPU 核心争抢
+
+# GPU 检测
+_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+if _DEVICE == "cuda":
+    torch.backends.cudnn.benchmark = True  # 固定输入尺寸时自动选最快卷积算法
+    logging.getLogger(__name__).info(
+        f"CUDA 可用: {torch.cuda.get_device_name(0)} | "
+        f"显存: {torch.cuda.get_device_properties(0).total_memory // 1024**2} MiB"
+    )
+else:
+    logging.getLogger(__name__).warning("未检测到 CUDA，将使用 CPU 训练")
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -85,8 +96,8 @@ PPO_KWARGS = dict(
         net_arch=[64, 64],     # two hidden layers — 16-dim input needs no wide net
         activation_fn=__import__("torch.nn", fromlist=["Tanh"]).Tanh,
     ),
-    n_steps=512,       # rollout length per env (≈ 1 week of 5-min bars)
-    batch_size=256,
+    n_steps=2048,      # ↑ 每个 env 每轮采集 2048 步（原 512）；更大 rollout buffer 让 GPU update 每次吃到更多数据
+    batch_size=512,    # ↑ GPU minibatch 大小（原 256）；需满足：batch_size ∣ (n_steps × n_envs)
     n_epochs=10,
     gamma=0.99,
     gae_lambda=0.95,
@@ -317,6 +328,7 @@ def main(args: argparse.Namespace) -> None:
             resume_path,
             env=train_vec,
             tensorboard_log=str(run_dir / "tb"),
+            device=_DEVICE,
         )
         # Load matching VecNormalize stats if available
         vecnorm_path = resume_path.parent / "vecnormalize.pkl"
@@ -336,11 +348,12 @@ def main(args: argparse.Namespace) -> None:
 
         # 【修改点 3】: 将 PPO 换成 RecurrentPPO，并指定 "MlpLstmPolicy"
         model = RecurrentPPO(
-            "MlpLstmPolicy", 
+            "MlpLstmPolicy",
             env=train_vec,
             learning_rate=linear_schedule(args.lr),
             tensorboard_log=str(run_dir / "tb"),
             seed=args.seed,
+            device=_DEVICE,                    # 自动选择 CUDA / CPU
             policy_kwargs=lstm_policy_kwargs,  # 注入 LSTM 配置
             # 解包你原有的 PPO_KWARGS，但排除掉冲突的参数
             **{k: v for k, v in PPO_KWARGS.items() if k not in ["policy", "verbose", "policy_kwargs"]},
@@ -387,9 +400,9 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--symbol",       default="BTC-USDT",
                    help="Symbol to train on (must have feature parquet ready).")
-    p.add_argument("--n-envs",       type=int,   default=4,
-                   help="Number of parallel training environments.")
-    p.add_argument("--total-steps",  type=int,   default=2_000_000,
+    p.add_argument("--n-envs",       type=int,   default=3,
+                   help="并行环境数，建议 = vCPU 数 - 1（主进程留 1 核跑 GPU update）。")
+    p.add_argument("--total-steps",  type=int,   default=10_000_000,
                    help="Total environment steps to train.")
     p.add_argument("--lr",           type=float, default=3e-4,
                    help="Initial learning rate (decays linearly to 0).")
