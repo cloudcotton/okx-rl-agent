@@ -58,18 +58,13 @@ from sandbox.data_loader import load_dataset
 from sandbox.trading_env import TradingEnv
 
 import torch
-torch.set_num_threads(1)  # 每个 subprocess worker 限 1 线程，防止 CPU 核心争抢
+# 主进程保留 2 个线程用于梯度更新（BLAS/MKL 并行）；
+# 子进程 env worker 在 make_env._init 里单独设为 1，防止核心争抢。
+torch.set_num_threads(2)
 
-# GPU 检测
-_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-if _DEVICE == "cuda":
-    torch.backends.cudnn.benchmark = True  # 固定输入尺寸时自动选最快卷积算法
-    logging.getLogger(__name__).info(
-        f"CUDA 可用: {torch.cuda.get_device_name(0)} | "
-        f"显存: {torch.cuda.get_device_properties(0).total_memory // 1024**2} MiB"
-    )
-else:
-    logging.getLogger(__name__).warning("未检测到 CUDA，将使用 CPU 训练")
+# 固定使用 CPU（无 GPU 配置）
+_DEVICE = "cpu"
+logging.getLogger(__name__).info("运行设备: CPU（16c 无 GPU 配置）")
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -96,8 +91,8 @@ PPO_KWARGS = dict(
         net_arch=[64, 64],     # two hidden layers — 16-dim input needs no wide net
         activation_fn=__import__("torch.nn", fromlist=["Tanh"]).Tanh,
     ),
-    n_steps=2048,      # ↑ 每个 env 每轮采集 2048 步（原 512）；更大 rollout buffer 让 GPU update 每次吃到更多数据
-    batch_size=512,    # ↑ GPU minibatch 大小（原 256）；需满足：batch_size ∣ (n_steps × n_envs)
+    n_steps=512,       # LSTM 每轮采集步数；更小 rollout 降低单轮 LSTM 前向计算量，提高 GPU 利用率
+    batch_size=256,    # 需满足：batch_size ∣ (n_steps × n_envs)；512×n_envs/256 = 整数
     n_epochs=10,
     gamma=0.99,
     gae_lambda=0.95,
@@ -129,6 +124,12 @@ def make_env(df: pd.DataFrame, env_kwargs: dict, rank: int, seed: int = 0):
     in TradingEnv after construction).
     """
     def _init() -> TradingEnv:
+        # 每个 env 子进程限 1 线程，防止 16 个 worker 各自开多线程撑爆 CPU
+        import torch as _torch
+        import os
+        _torch.set_num_threads(1)
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
         env = TradingEnv(df, **env_kwargs)
         env.reset(seed=seed + rank)
         return env
@@ -341,7 +342,7 @@ def main(args: argparse.Namespace) -> None:
         # 【修改点 2】: 专门为 LSTM 定义网络架构参数
         # 提取特征用两层 64 的全连接，LSTM 记忆体容量设为 64，1 层结构防止过拟合
         lstm_policy_kwargs = dict(
-            net_arch=[64, 64],
+            net_arch=[64],         # 单层特征提取已够用，减少参数量
             lstm_hidden_size=64,
             n_lstm_layers=1,
         )
@@ -400,9 +401,9 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--symbol",       default="BTC-USDT",
                    help="Symbol to train on (must have feature parquet ready).")
-    p.add_argument("--n-envs",       type=int,   default=3,
-                   help="并行环境数，建议 = vCPU 数 - 1（主进程留 1 核跑 GPU update）。")
-    p.add_argument("--total-steps",  type=int,   default=10_000_000,
+    p.add_argument("--n-envs",       type=int,   default=14,
+                   help="并行环境数，16c 服务器建议 14（主进程留 2 核做梯度更新）。")
+    p.add_argument("--total-steps",  type=int,   default=3_000_000,
                    help="Total environment steps to train.")
     p.add_argument("--lr",           type=float, default=3e-4,
                    help="Initial learning rate (decays linearly to 0).")
