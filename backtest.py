@@ -27,12 +27,23 @@ log = logging.getLogger(__name__)
 def main(args):
     # ── 1. 路径设置与环境检查 ──────────────────────────────────────────
     run_dir = Path(args.run_dir) / f"ppo_{args.symbol}"
-    model_path = run_dir / "best_model" / "best_model.zip"  # 修改了这一行
-    # model_path = run_dir / "final_model.zip"
     stats_path = run_dir / "vecnormalize.pkl"
 
-    if not model_path.exists() or not stats_path.exists():
-        log.error(f"找不到模型或归一化文件！请确认训练是否产生 best_model.zip\n路径: {model_path}")
+    # 优先用 EvalCallback 保存的 best_model，降级用训练结束时的 final_model
+    best_model_path  = run_dir / "best_model" / "best_model.zip"
+    final_model_path = run_dir / "final_model.zip"
+    if best_model_path.exists():
+        model_path = best_model_path
+        log.info(f"使用 best_model: {model_path}")
+    elif final_model_path.exists():
+        model_path = final_model_path
+        log.warning(f"未找到 best_model，降级使用 final_model: {model_path}")
+    else:
+        log.error(f"找不到任何模型文件！请确认训练是否完成\n已查找:\n  {best_model_path}\n  {final_model_path}")
+        return
+
+    if not stats_path.exists():
+        log.error(f"找不到归一化文件！路径: {stats_path}")
         return
 
     # ── 2. 加载数据并严格切分出验证集 ─────────────────────────────────
