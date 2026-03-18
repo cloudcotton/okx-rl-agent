@@ -57,6 +57,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox.data_loader import load_dataset
 from sandbox.trading_env import TradingEnv
 
+import torch
+torch.set_num_threads(1)  # 强行给 PyTorch 戴上痛苦面具，禁止它抢占多核 CPU！
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -82,7 +85,7 @@ PPO_KWARGS = dict(
         net_arch=[64, 64],     # two hidden layers — 16-dim input needs no wide net
         activation_fn=__import__("torch.nn", fromlist=["Tanh"]).Tanh,
     ),
-    n_steps=2048,       # rollout length per env (≈ 1 week of 5-min bars)
+    n_steps=512,       # rollout length per env (≈ 1 week of 5-min bars)
     batch_size=256,
     n_epochs=10,
     gamma=0.99,
