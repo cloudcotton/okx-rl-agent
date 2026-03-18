@@ -57,8 +57,8 @@ log = logging.getLogger(__name__)
 _COMMISSION_RATE  = 0.0005    # 0.05 %  one-way Taker fee
 _SLIPPAGE_RATE    = 0.00025   # 0.025 % of execution open price
 _HOLDING_PENALTY  =  0.0      # 0 = no fear of holding; profit-holding gets +0.0001 bonus below
-_ADHD_PENALTY     = -0.001    # any position change — calibrated to ~2× one-way commission
-_REVERSAL_PENALTY = -0.0005   # extra for direct long ↔ short flip
+_ADHD_PENALTY     = -0.0002   # any position change — ~0.4× one-way commission (reverted from -0.001 which caused long-only collapse)
+_REVERSAL_PENALTY = -0.0001   # extra for direct long ↔ short flip
 _DRAWDOWN_LIMIT   = 0.10      # 10 % peak-to-trough → circuit-breaker
 _DRAWDOWN_PENALTY = -1.0      # one-time terminal penalty
 _MAX_STEPS        = 672       # 1 week of 15-min bars  (7 × 24 × 4 = 672)

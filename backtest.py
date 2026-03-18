@@ -14,8 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-#from stable_baselines3 import PPO
-from sb3_contrib import RecurrentPPO
+from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from sandbox.data_loader import load_dataset
@@ -49,7 +48,8 @@ def main(args):
     # ── 3. 构建回测环境 (解除最大步数限制，一口气跑完) ────────────────
     def make_eval_env():
         # max_steps 设为验证集长度，不让它中途强制结算
-        return TradingEnv(eval_df, max_steps=len(eval_df) - 10)
+        # drawdown_limit=1.0 关闭回撤熔断，让模型跑完全程，观察真实表现
+        return TradingEnv(eval_df, max_steps=len(eval_df) - 10, drawdown_limit=1.0)
     
     # 必须使用 DummyVecEnv 包装，以匹配训练时的维度
     env = DummyVecEnv([make_eval_env])
@@ -62,31 +62,25 @@ def main(args):
 
     # ── 4. 加载 AI 大脑 ───────────────────────────────────────────────
     log.info(f"正在唤醒 AI 模型: {model_path.name}")
-    model = RecurrentPPO.load(model_path, env=env)
+    model = PPO.load(model_path, env=env)
 
     # ── 5. 开始逐 K 线回测 ────────────────────────────────────────────
     obs = env.reset()
     done = False
 
-    # 【新增】：LSTM 记忆传递的初始状态
-    lstm_states = None
-    # 告诉 LSTM 这是第一步，需要初始化记忆
-    episode_starts = np.ones((env.num_envs,), dtype=bool)
-    
     # 记录状态，用于捕捉交易动作
     last_position = 0.0
     entry_price = 0.0
     entry_time = None
-    
+
     log.info("\n" + "="*80)
     log.info(" 实盘推演日志 (Trade Log)")
     log.info("="*80)
 
     while not done:
-        # deterministic=True 极其重要！关掉随机探索，让模型输出最有把握的动作
-        action, lstm_states = model.predict(obs, state=lstm_states, episode_start=episode_starts, deterministic=True)
+        action, _ = model.predict(obs, deterministic=True)
         obs, rewards, dones, infos = env.step(action)
-        
+
         # SB3 的 VecEnv 返回的都是数组，提取第0个环境的信息
         info = infos[0]
         current_position = info["position"]
@@ -101,13 +95,13 @@ def main(args):
                 direction = "多头" if last_position > 0 else "空头"
                 pnl_ratio = (current_price / entry_price - 1.0) if last_position > 0 else (1.0 - current_price / entry_price)
                 pnl_pct = pnl_ratio * 100
-                
+
                 # 扣除大致的手续费和滑点 (双边 0.05% + 0.025%)
-                net_pnl_pct = pnl_pct - (0.075 * 2) 
-                
+                net_pnl_pct = pnl_pct - (0.075 * 2)
+
                 profit_str = f"🟩 盈利: {net_pnl_pct:+.2f}%" if net_pnl_pct > 0 else f"🟥 亏损: {net_pnl_pct:+.2f}%"
                 print(f"[{current_time}] 平仓 {direction:2s} | 离场价: {current_price:>8.2f} | {profit_str}")
-            
+
             # 2. 开立新仓位
             if current_position != 0.0:
                 direction = "多头" if current_position > 0 else "空头"
@@ -115,12 +109,10 @@ def main(args):
                 print(f"[{current_time}] {action_str} {direction:2s} | 进场价: {current_price:>8.2f}")
                 entry_price = current_price
                 entry_time = current_time
-            
+
             last_position = current_position
-            
+
         done = dones[0]
-        # 【新增】：更新 episode_starts，传给下一步
-        episode_starts = dones
 
     # ── 6. 打印期末成绩单 ─────────────────────────────────────────────
     final_info = infos[0]

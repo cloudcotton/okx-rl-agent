@@ -1,0 +1,16 @@
+# Core RL
+stable-baselines3==2.7.1
+
+# Environment
+gymnasium==1.2.3
+
+# Deep learning
+torch==2.10.0
+
+# Data
+numpy==2.2.6
+pandas==2.3.3
+pyarrow==23.0.1             # parquet read/write
+
+# Monitoring
+tensorboard==2.20.0
