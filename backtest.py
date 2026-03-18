@@ -27,8 +27,8 @@ log = logging.getLogger(__name__)
 def main(args):
     # ── 1. 路径设置与环境检查 ──────────────────────────────────────────
     run_dir = Path(args.run_dir) / f"ppo_{args.symbol}"
-    # model_path = run_dir / "best_model" / "best_model.zip"  # 修改了这一行
-    model_path = run_dir / "final_model.zip"
+    model_path = run_dir / "best_model" / "best_model.zip"  # 修改了这一行
+    # model_path = run_dir / "final_model.zip"
     stats_path = run_dir / "vecnormalize.pkl"
 
     if not model_path.exists() or not stats_path.exists():
