@@ -63,6 +63,7 @@ _DRAWDOWN_LIMIT   = 0.10      # 10 % peak-to-trough → circuit-breaker
 _DRAWDOWN_PENALTY = -1.0      # one-time terminal penalty
 _MAX_STEPS        = 672       # 1 week of 15-min bars  (7 × 24 × 4 = 672)
 _INITIAL_NW       = 1.0       # normalised; PnL is expressed in multiples
+_MIN_HOLD_BARS    = 4         # minimum bars to hold a position (4 × 15min = 1 hour)
 
 # Action → target position mapping
 _ACTION_TO_POS = {0: -1.0, 1: 0.0, 2: 1.0}
@@ -85,6 +86,7 @@ class TradingEnv(gym.Env):
         reversal_penalty: float = _REVERSAL_PENALTY,
         drawdown_limit: float = _DRAWDOWN_LIMIT,
         drawdown_penalty: float = _DRAWDOWN_PENALTY,
+        min_hold_bars: int = _MIN_HOLD_BARS,
         render_mode: Optional[str] = None,
     ) -> None:
         super().__init__()
@@ -107,6 +109,7 @@ class TradingEnv(gym.Env):
         self.reversal_penalty = reversal_penalty
         self.drawdown_limit   = drawdown_limit
         self.drawdown_penalty = drawdown_penalty
+        self.min_hold_bars    = min_hold_bars
         self.render_mode      = render_mode
 
         # Gymnasium spaces
@@ -127,6 +130,7 @@ class TradingEnv(gym.Env):
         self._n_trades:          int   = 0
         self._n_winning_trades:  int   = 0
         self._total_commission:  float = 0.0
+        self._steps_in_position: int   = 0  # bars held in current position
 
     # ------------------------------------------------------------------
     # Gymnasium API
@@ -161,6 +165,7 @@ class TradingEnv(gym.Env):
         self._n_trades         = 0
         self._n_winning_trades = 0
         self._total_commission = 0.0
+        self._steps_in_position = 0
 
         return self._get_obs(), self._get_info()
 
@@ -171,6 +176,13 @@ class TradingEnv(gym.Env):
 
         target_pos = _ACTION_TO_POS[action]
         prev_pos   = self._position
+
+        # ── 0. Enforce minimum holding period ─────────────────────────────────
+        # If in a position and trying to exit/reverse before min_hold_bars,
+        # override to hold. No penalty — the model learns through r_base.
+        if prev_pos != 0.0 and target_pos != prev_pos:
+            if self._steps_in_position < self.min_hold_bars:
+                target_pos = prev_pos  # force hold
 
         # ── 1. Mark-to-market BEFORE execution (at current bar's close) ──────
         prev_marked = self._mark_to_market(self._close_arr[self._step_idx])
@@ -185,6 +197,14 @@ class TradingEnv(gym.Env):
             # Extra reversal penalty for direct flip (bypassing flat)
             if prev_pos != 0.0 and target_pos != 0.0:
                 reward_shaping += self.reversal_penalty
+
+            # Explicit commission signal: makes fee cost a direct, undiluted reward
+            # signal. The actual deduction already flows through r_base via net_worth,
+            # but that signal is too weak in noisy bar-to-bar returns.
+            if prev_pos != 0.0:
+                reward_shaping -= self.commission_rate   # exit commission
+            if target_pos != 0.0:
+                reward_shaping -= self.commission_rate   # entry commission
 
             # Close existing position first (if any)
             if prev_pos != 0.0:
@@ -247,7 +267,15 @@ class TradingEnv(gym.Env):
                 curr_marked = self._net_worth
             truncated = True
 
-        # ── 7. Build output ───────────────────────────────────────────────────
+        # ── 7. Update position hold counter ───────────────────────────────────
+        if self._position == 0.0:
+            self._steps_in_position = 0
+        elif self._position != prev_pos:        # just entered a new position
+            self._steps_in_position = 1
+        else:                                   # continuing same position
+            self._steps_in_position += 1
+
+        # ── 8. Build output ───────────────────────────────────────────────────
         obs  = self._get_obs()
         info = self._get_info(curr_marked)
 

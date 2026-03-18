@@ -179,10 +179,14 @@ class TradingMetricsCallback(BaseCallback):
         for done, info in zip(dones, infos):
             if not done:
                 continue
-            n_trades     = info.get("n_trades", 0)
-            win_rate     = info.get("win_rate", 0.0)
-            total_return = info.get("total_return", 0.0)
-            peak_marked  = info.get("peak_marked", 1.0)
+            n_trades         = info.get("n_trades", 0)
+            win_rate         = info.get("win_rate", 0.0)
+            total_return     = info.get("total_return", 0.0)
+            peak_marked      = info.get("peak_marked", 1.0)
+            total_commission = info.get("total_commission", 0.0)
+            steps_done       = info.get("step", 1)
+            # avg bars held per trade — proxy for holding duration
+            avg_hold_steps   = steps_done / n_trades if n_trades > 0 else float(steps_done)
 
             self._ep_returns.append(total_return)
             self._ep_trades.append(n_trades)
@@ -192,6 +196,8 @@ class TradingMetricsCallback(BaseCallback):
             self.logger.record("trade/n_trades",        n_trades)
             self.logger.record("trade/win_rate",        win_rate)
             self.logger.record("trade/peak_marked",     peak_marked)
+            self.logger.record("trade/total_commission", total_commission)
+            self.logger.record("trade/avg_hold_steps",  avg_hold_steps)
             self.logger.record("trade/return_mean100",  float(np.mean(self._ep_returns)))
             self.logger.record("trade/trades_mean100",  float(np.mean(self._ep_trades)))
             self.logger.record("trade/winrate_mean100", float(np.mean(self._ep_winrates)))
@@ -277,7 +283,7 @@ def build_callbacks(
 
 
 def main(args: argparse.Namespace) -> None:
-    run_dir = Path(args.run_dir) / f"ppo_{args.symbol}"
+    run_dir = Path(args.run_dir) / f"ppo_{args.symbol.replace('-', '_')}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 1. Load & split data ─────────────────────────────────────────────
