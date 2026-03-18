@@ -22,11 +22,26 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-# 完全替换原来的 FEATURE_COLS
+# 15m MTF 特征集（13 个）— 与 generate_15m_features.py 保持同步
+# 三层结构：15m 入场信号 | 1h 方向过滤 | 4h 大趋势
 FEATURE_COLS = [
-    "f_ret_1", "f_ret_4", "f_rsi_14", "f_macd_hist_norm",
-    "f_ema_20_bias", "f_ema_60_bias", "f_volatility_24",
-    "f_bb_pos", "f_rvol_24"
+    # 15m 层
+    "f_ret_1",
+    "f_ret_4",
+    "f_rsi_14",
+    "f_macd_hist_norm",
+    "f_atr_norm",
+    "f_bb_pos",
+    "f_rvol",
+    # 1h 层（4 × 15m）
+    "f_1h_trend",
+    "f_1h_rsi",
+    # 4h 层（16 × 15m）
+    "f_4h_position",
+    "f_4h_bias",
+    # 时间编码
+    "f_sin_hour",
+    "f_cos_hour",
 ]
 OHLCV_COLS = ["datetime", "open", "high", "low", "close", "vol"]
 
@@ -53,15 +68,13 @@ def load_dataset(
     Returns
     -------
     pd.DataFrame
-        Columns: [datetime, open, high, low, close, vol] + 14 f_* features.
+        Columns: [datetime, open, high, low, close, vol] + 13 f_* features.
         dtypes: datetime→datetime64, OHLCV→float64, features→float32.
         Sorted by datetime, index reset.
     """
     feat_dir = Path(feat_dir) if feat_dir else _DEFAULT_FEAT_DIR
 
-    #fname = symbol.replace("-", "_") + "_5m_features.parquet"
-    #fname = "ETH_USDT_1h_features.parquet"
-    fname = "ETH_USDT_5m_features_new.parquet"
+    fname = symbol.replace("-", "_") + "_15m_features.parquet"
     path  = feat_dir / fname
     if not path.exists():
         raise FileNotFoundError(

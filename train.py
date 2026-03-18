@@ -273,9 +273,9 @@ def main(args: argparse.Namespace) -> None:
     df = load_dataset(args.symbol)
     train_df, eval_df = split_train_eval(df, TRAIN_RATIO)
 
-    # Env constructor kwargs (shared across all parallel envs)
-    env_kwargs = dict(max_steps=TradingEnv.metadata.get("max_steps", 2016))
-    # Use default TradingEnv friction params (hardened values from the spec)
+    # Env constructor kwargs — use TradingEnv defaults (max_steps, friction params).
+    # _MAX_STEPS in trading_env.py is the single source of truth.
+    env_kwargs = {}
 
     # ── 2. Training VecEnv ───────────────────────────────────────────────
     log.info(f"Creating {args.n_envs} parallel training environments …")

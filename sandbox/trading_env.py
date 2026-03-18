@@ -1,17 +1,16 @@
 """
-Gymnasium TradingEnv — RL trading sandbox (v1.0)
+Gymnasium TradingEnv — RL trading sandbox (v1.1 — 15m edition)
 
 Design philosophy
 -----------------
-* "地狱难度" (Hell difficulty): maximally pessimistic friction costs ensure that
-  only strategies with real edge survive.
+* Realistic friction: commission + slippage ensure only real-edge strategies survive.
 * Zero look-ahead: the agent acts on bar-t features and executes at bar-(t+1) open.
 * Simple 1× leverage net-worth tracker — no margin, no liquidation logic.
 
-Observation space (16 dims, Box[-10, 10])
-    [0:14]  — 14 pre-selected market features
-    [14]    — current_position  ∈ {-1.0, 0.0, +1.0}
-    [15]    — unrealized_pnl_norm  ∈ [-10, 10]  (pnl_ratio × 10, clipped; 1 unit = 10%)
+Observation space (n_features+2 dims, Box[-10, 10])
+    [0:n]   — market features (configured by data_loader.FEATURE_COLS)
+    [n]     — current_position  ∈ {-1.0, 0.0, +1.0}
+    [n+1]   — unrealized_pnl_norm  ∈ [-10, 10]  (pnl_ratio × 10, clipped; 1 unit = 10%)
 
 Action space (Discrete 3)
     0 → target position = -1  (short)
@@ -19,19 +18,23 @@ Action space (Discrete 3)
     2 → target position = +1  (long)
 
 Reward components
-    R = R_base + R_hold + R_adhd + R_stoploss [+ R_drawdown if triggered]
+    R = R_base + R_hold + R_adhd [+ R_drawdown if triggered]
     R_base     = ln(marked_nw_t / marked_nw_{t-1})
+                 Naturally penalises losing positions via mark-to-market.
     R_hold     = +0.0001 each step while position is profitable (float pnl > 0)
-                  0.0    otherwise (holding fear removed)
-    R_adhd     = ADHD_PENALTY     (-0.002)  on any position change
-                 REVERSAL_PENALTY (-0.0002) extra for direct flip (long ↔ short)
-    R_stoploss = -0.05 each step that unrealised loss exceeds 1%
+                  0.0    otherwise
+    R_adhd     = ADHD_PENALTY     (-0.0002) on any position change
+                 REVERSAL_PENALTY (-0.0001) extra for direct flip (long ↔ short)
     R_draw     = DRAWDOWN_PENALTY (-1.0) once, then episode terminates
+
+    *** No per-step stop-loss penalty — R_base already conveys price-move pain.
+    *** A hard per-step stop-loss (-0.05) creates unrecoverable reward traps at
+        short timeframes where 1 % intrabar moves are normal; removed in v1.1.
 
 Episode lifecycle
     reset()  → random start index, leaving room for MAX_STEPS + 1 bars ahead
     step()   → execute at next open, mark-to-market at new close, check termination
-    truncation at MAX_STEPS; forced liquidation at episode end.
+    truncation at MAX_STEPS (672 = 1 week of 15-min bars); forced liquidation at end.
 """
 
 from __future__ import annotations
@@ -54,11 +57,11 @@ log = logging.getLogger(__name__)
 _COMMISSION_RATE  = 0.0005    # 0.05 %  one-way Taker fee
 _SLIPPAGE_RATE    = 0.00025   # 0.025 % of execution open price
 _HOLDING_PENALTY  =  0.0      # 0 = no fear of holding; profit-holding gets +0.0001 bonus below
-_ADHD_PENALTY     = -0.002    # any position change (×10 vs original to curb overtrading)
-_REVERSAL_PENALTY = -0.0002   # extra for direct long ↔ short flip
+_ADHD_PENALTY     = -0.0002   # any position change — calibrated to ~1× one-way commission
+_REVERSAL_PENALTY = -0.0001   # extra for direct long ↔ short flip
 _DRAWDOWN_LIMIT   = 0.10      # 10 % peak-to-trough → circuit-breaker
 _DRAWDOWN_PENALTY = -1.0      # one-time terminal penalty
-_MAX_STEPS        = 2016      # 1 week of 5-min bars
+_MAX_STEPS        = 672       # 1 week of 15-min bars  (7 × 24 × 4 = 672)
 _INITIAL_NW       = 1.0       # normalised; PnL is expressed in multiples
 
 # Action → target position mapping
@@ -215,9 +218,7 @@ class TradingEnv(gym.Env):
                 raw_pnl = 1.0 - curr_close / self._entry_price
 
             if raw_pnl > 0.0:
-                r_hold = 0.0001          # sugar for staying in a winner
-            elif raw_pnl < -0.01:
-                reward_shaping -= 0.05   # electric shock: unrealised loss > 1%
+                r_hold = 0.0001   # small bonus for holding a winner
         else:
             raw_pnl = 0.0
 
