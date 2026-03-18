@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 def main(args):
     # ── 1. 路径设置与环境检查 ──────────────────────────────────────────
-    run_dir = Path(args.run_dir) / f"ppo_{args.symbol}"
+    run_dir = Path(args.run_dir) / f"ppo_{args.symbol.replace('-', '_')}"
     stats_path = run_dir / "vecnormalize.pkl"
 
     # 优先用 EvalCallback 保存的 best_model，降级用训练结束时的 final_model
