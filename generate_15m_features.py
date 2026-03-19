@@ -154,7 +154,7 @@ def generate_15m_features(input_path: str, output_path: str) -> None:
     funding_path = Path(__file__).resolve().parent / "data_center" / "funding_rate" / "ETHUSDT_funding_rate.parquet"
     if funding_path.exists():
         fr = pd.read_parquet(funding_path)[["datetime", "funding_rate"]].copy()
-        fr["datetime"] = pd.to_datetime(fr["datetime"])
+        fr["datetime"] = pd.to_datetime(fr["datetime"]).astype("datetime64[ms]")
         fr = fr.sort_values("datetime").drop_duplicates("datetime")
         fr = fr.set_index("datetime")
 
