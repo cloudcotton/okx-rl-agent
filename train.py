@@ -10,8 +10,8 @@ Design choices
 --------------
 * Time-based train/eval split (never leak future data into training).
 * SubprocVecEnv for parallel rollout collection.
-* VecNormalize on observations only (rewards kept raw to preserve
-  penalty magnitudes — drawdown -1.0 must stay interpretable).
+* VecNormalize on observations only (rewards kept raw — reward normalisation
+  amplifies the drawdown spike relative to R_base and destabilises value fitting).
 * Linear learning-rate decay from 3e-4 → 0.
 * EvalCallback saves best model by mean episode reward.
 * TradingMetricsCallback logs domain-specific KPIs to TensorBoard.
@@ -94,7 +94,7 @@ PPO_KWARGS = dict(
     gamma=0.99,
     gae_lambda=0.95,
     clip_range=0.2,
-    ent_coef=0.03,      # entropy bonus — tripled to prevent long-only policy collapse
+    ent_coef=0.005,     # entropy bonus — reduced to stabilise convergence (was 0.03, caused policy oscillation)
     vf_coef=0.5,
     max_grad_norm=0.5,
     verbose=1,
@@ -392,7 +392,7 @@ def _parse_args() -> argparse.Namespace:
                    help="Symbol to train on (must have feature parquet ready).")
     p.add_argument("--n-envs",       type=int,   default=14,
                    help="并行环境数，16c 服务器建议 14（主进程留 2 核做梯度更新）。")
-    p.add_argument("--total-steps",  type=int,   default=3_000_000,
+    p.add_argument("--total-steps",  type=int,   default=5_000_000,
                    help="Total environment steps to train.")
     p.add_argument("--lr",           type=float, default=3e-4,
                    help="Initial learning rate (decays linearly to 0).")

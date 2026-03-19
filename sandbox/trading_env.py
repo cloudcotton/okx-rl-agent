@@ -60,7 +60,7 @@ _HOLDING_PENALTY  =  0.0      # 0 = no fear of holding; profit-holding gets +0.0
 _ADHD_PENALTY     = -0.0002   # any position change — ~0.4× one-way commission (reverted from -0.001 which caused long-only collapse)
 _REVERSAL_PENALTY = -0.0001   # extra for direct long ↔ short flip
 _DRAWDOWN_LIMIT   = 0.10      # 10 % peak-to-trough → circuit-breaker
-_DRAWDOWN_PENALTY = -1.0      # one-time terminal penalty
+_DRAWDOWN_PENALTY = -0.5      # one-time terminal penalty (reduced from -1.0 to narrow reward scale gap vs R_base ~0.001/step)
 _MAX_STEPS        = 672       # 1 week of 15-min bars  (7 × 24 × 4 = 672)
 _INITIAL_NW       = 1.0       # normalised; PnL is expressed in multiples
 _MIN_HOLD_BARS    = 4         # minimum bars to hold a position (4 × 15min = 1 hour)
