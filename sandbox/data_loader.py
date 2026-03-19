@@ -22,8 +22,8 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-# 15m MTF 特征集（13 个）— 与 generate_15m_features.py 保持同步
-# 三层结构：15m 入场信号 | 1h 方向过滤 | 4h 大趋势
+# 15m MTF 特征集（14 个）— 与 generate_15m_features.py 保持同步
+# 三层结构：15m 入场信号 | 1h 方向过滤 | 4h 大趋势 | 市场情绪（资金费率）
 FEATURE_COLS = [
     # 15m 层
     "f_ret_1",
@@ -42,6 +42,8 @@ FEATURE_COLS = [
     # 时间编码
     "f_sin_hour",
     "f_cos_hour",
+    # 市场情绪（Binance ETHUSDT 永续资金费率 × 1000）
+    "f_funding_rate",
 ]
 OHLCV_COLS = ["datetime", "open", "high", "low", "close", "vol"]
 
