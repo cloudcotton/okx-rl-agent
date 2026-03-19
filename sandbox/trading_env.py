@@ -57,8 +57,9 @@ log = logging.getLogger(__name__)
 _COMMISSION_RATE  = 0.0005    # 0.05 %  one-way Taker fee
 _SLIPPAGE_RATE    = 0.00025   # 0.025 % of execution open price
 _HOLDING_PENALTY  =  0.0      # 0 = no fear of holding; profit-holding gets +0.0001 bonus below
-_ADHD_PENALTY     = -0.0002   # any position change — ~0.4× one-way commission (reverted from -0.001 which caused long-only collapse)
+_ADHD_PENALTY     = -0.0001   # any position change — reduced from -0.0002; commission already flows through r_base
 _REVERSAL_PENALTY = -0.0001   # extra for direct long ↔ short flip
+_FLAT_PENALTY     = -0.00003  # per-step cost of staying flat — breaks "do-nothing" equilibrium
 _DRAWDOWN_LIMIT   = 0.10      # 10 % peak-to-trough → circuit-breaker
 _DRAWDOWN_PENALTY = -0.5      # one-time terminal penalty (reduced from -1.0 to narrow reward scale gap vs R_base ~0.001/step)
 _MAX_STEPS        = 672       # 1 week of 15-min bars  (7 × 24 × 4 = 672)
@@ -84,6 +85,7 @@ class TradingEnv(gym.Env):
         holding_penalty: float = _HOLDING_PENALTY,
         adhd_penalty: float = _ADHD_PENALTY,
         reversal_penalty: float = _REVERSAL_PENALTY,
+        flat_penalty: float = _FLAT_PENALTY,
         drawdown_limit: float = _DRAWDOWN_LIMIT,
         drawdown_penalty: float = _DRAWDOWN_PENALTY,
         min_hold_bars: int = _MIN_HOLD_BARS,
@@ -107,6 +109,7 @@ class TradingEnv(gym.Env):
         self.holding_penalty  = holding_penalty
         self.adhd_penalty     = adhd_penalty
         self.reversal_penalty = reversal_penalty
+        self.flat_penalty     = flat_penalty
         self.drawdown_limit   = drawdown_limit
         self.drawdown_penalty = drawdown_penalty
         self.min_hold_bars    = min_hold_bars
@@ -198,13 +201,9 @@ class TradingEnv(gym.Env):
             if prev_pos != 0.0 and target_pos != 0.0:
                 reward_shaping += self.reversal_penalty
 
-            # Explicit commission signal: makes fee cost a direct, undiluted reward
-            # signal. The actual deduction already flows through r_base via net_worth,
-            # but that signal is too weak in noisy bar-to-bar returns.
-            if prev_pos != 0.0:
-                reward_shaping -= self.commission_rate   # exit commission
-            if target_pos != 0.0:
-                reward_shaping -= self.commission_rate   # entry commission
+            # NOTE: explicit commission removed — fee already flows through
+            # _net_worth → curr_marked → r_base; double-counting inflated
+            # perceived trading cost and caused policy collapse to "do nothing".
 
             # Close existing position first (if any)
             if prev_pos != 0.0:
@@ -213,6 +212,11 @@ class TradingEnv(gym.Env):
             # Open new position (if not going flat)
             if target_pos != 0.0:
                 self._open_position(target_pos, exec_open)
+        else:
+            # Flat-holding penalty: staying flat is not free — the opportunity
+            # cost prevents the agent from exploiting "do nothing" as a local optimum.
+            if target_pos == 0.0:
+                reward_shaping += self.flat_penalty
 
         # ── 3. Advance step ───────────────────────────────────────────────────
         self._step_idx  += 1
