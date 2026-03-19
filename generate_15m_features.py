@@ -149,7 +149,35 @@ def generate_15m_features(input_path: str, output_path: str) -> None:
     df["f_sin_hour"] = np.sin(angle)
     df["f_cos_hour"] = np.cos(angle)
 
-    # ── 5. 清洗与输出 ────────────────────────────────────────────────────
+    # ── 5. 资金费率（Binance ETHUSDT 永续，每 8 小时一条，向前填充）────────
+
+    funding_path = Path(__file__).resolve().parent / "data_center" / "funding_rate" / "ETHUSDT_funding_rate.parquet"
+    if funding_path.exists():
+        fr = pd.read_parquet(funding_path)[["datetime", "funding_rate"]].copy()
+        fr["datetime"] = pd.to_datetime(fr["datetime"])
+        fr = fr.sort_values("datetime").drop_duplicates("datetime")
+        fr = fr.set_index("datetime")
+
+        # merge_asof: 每根 15m K 线取其之前最新已结算的资金费率（无前瞻）
+        df_tmp = df[["datetime"]].copy()
+        df_tmp["datetime"] = pd.to_datetime(df_tmp["datetime"])
+        merged = pd.merge_asof(
+            df_tmp.sort_values("datetime"),
+            fr.reset_index(),
+            on="datetime",
+            direction="backward",
+        )
+        merged = merged.set_index(df_tmp.sort_values("datetime").index)
+        df["f_funding_rate"] = merged["funding_rate"].reindex(df.index)
+
+        # 缩放：× 1000，使正常范围约 [-0.5, +1.5]，极端约 ±3；clip ±10 与其他特征一致
+        df["f_funding_rate"] = df["f_funding_rate"] * 1000.0
+        log.info(f"资金费率已合并: {df['f_funding_rate'].notna().sum():,} 行有效值")
+    else:
+        log.warning(f"资金费率文件不存在，跳过: {funding_path}")
+        log.warning("运行: python data_center/fetch_funding_rate.py")
+
+    # ── 6. 清洗与输出 ────────────────────────────────────────────────────
 
     df_clean = df.dropna().reset_index(drop=True)
     log.info(f"有效数据行数: {len(df_clean):,}（丢弃 {len(df) - len(df_clean):,} 行暖启动 NaN）")
